@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() {
   runApp(const OrbitalApp());
@@ -14,8 +15,8 @@ class OrbitalApp extends StatelessWidget {
       title: 'Orbital 3 Pro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true).copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0A0F18), // Deep Dark Background
-        primaryColor: const Color(0xFF00F0FF), // Neon Teal
+        scaffoldBackgroundColor: const Color(0xFF0A0F18),
+        primaryColor: const Color(0xFF00F0FF),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF131C2A),
           elevation: 0,
@@ -42,7 +43,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [];
   
-  // Advanced History State
   final List<Map<String, dynamic>> _historySessions = [
     {"title": "Hardware Setup (LM317)", "pinned": true},
     {"title": "Math & Logic Gates", "pinned": false},
@@ -77,7 +77,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _editUserMessage(String text) {
     _controller.text = text;
-    // In a real app, you might truncate messages below this point here.
   }
 
   void _copyToClipboard(String text) {
@@ -91,34 +90,37 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _shareMessage(String text) {
-    // Note: True native sharing requires the 'share_plus' plugin.
-    // This is the UI binding for it.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Share triggered (Requires share_plus plugin)'),
-        backgroundColor: Colors.grey,
-      ),
-    );
+  void _shareMessage(String text) async {
+    final result = await Share.shareWithResult(text, subject: 'From Orbital 3 Pro');
+    if (result.status == ShareResultStatus.success) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Response shared successfully!', style: TextStyle(color: Colors.black)),
+            backgroundColor: Color(0xFF00F0FF),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   void _togglePin(int index) {
     setState(() {
       _historySessions[index]["pinned"] = !_historySessions[index]["pinned"];
-      // Re-sort: Pinned items at the top
       _historySessions.sort((a, b) {
         if (a["pinned"] == b["pinned"]) return 0;
         return a["pinned"] ? -1 : 1;
       });
     });
-    Navigator.pop(context); // Close drawer
+    Navigator.pop(context);
   }
 
   void _deleteSession(int index) {
     setState(() {
       _historySessions.removeAt(index);
     });
-    Navigator.pop(context); // Close drawer
+    Navigator.pop(context);
   }
 
   @override
@@ -253,20 +255,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         style: TextStyle(color: isUser ? neonTeal : Colors.white, fontSize: 15, height: 1.4),
                       ),
                     ),
-                    // Action Buttons Row
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 8),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: isUser
-                            ? [ // User Actions
+                            ? [
                                 IconButton(
                                   icon: const Icon(Icons.edit, size: 16, color: Colors.grey),
                                   onPressed: () => _editUserMessage(msg["text"]!),
                                   tooltip: "Edit Prompt",
                                 ),
                               ]
-                            : [ // Orbital Actions
+                            : [
                                 IconButton(
                                   icon: const Icon(Icons.content_copy, size: 16, color: Colors.grey),
                                   onPressed: () => _copyToClipboard(msg["text"]!),
