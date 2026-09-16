@@ -36,7 +36,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, String>> _messages = [];
   final List<String> _historySessions = ["Session 1 - Hardware Setup", "Session 2 - Math & Logic"];
   bool _isLoading = false;
-  bool _isThinkingMode = false; // Toggle state for reasoning/thinking mode
+  bool _isThinkingMode = false;
+  
+  // Temperature (Effort) selection value: Default is 0.9
+  double _selectedTemperature = 0.9;
 
   void _sendMessage() {
     if (_controller.text.trim().isEmpty) return;
@@ -48,12 +51,17 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _controller.clear();
 
-    // Simulated response handling considering Thinking Mode state
     Future.delayed(const Duration(seconds: 1), () {
       setState(() {
+        String effortLabel = _selectedTemperature == 0.1 
+            ? "Max Effort (Temp 0.1)" 
+            : _selectedTemperature == 0.5 
+                ? "High Effort (Temp 0.5)" 
+                : "Default (Temp 0.9)";
+
         String responseText = _isThinkingMode 
-            ? "[Thinking Process]\n- Analyzing query structure\n- Applying step-by-step reasoning logic\n\n[Orbital 3 Pro Output]\nResponse generated with deep reasoning active."
-            : "Orbital 3 Pro active. Ready to assist.";
+            ? "[Thinking Process | $effortLabel]\n- Analyzing query\n- Applying strict logic constraints\n\n[Orbital 3 Pro Output]\nExecution completed."
+            : "Orbital 3 Pro active ($effortLabel). Ready to assist.";
             
         _messages.add({"sender": "orbital", "text": responseText});
         _isLoading = false;
@@ -70,30 +78,53 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             const Text('Orbital 3 Pro', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             Text(
-              _isThinkingMode ? 'Thinking Mode Active (1.5B)' : 'Standard Mode (1.5B)', 
+              'Offline AI Engine (1.5B) • Temp: $_selectedTemperature', 
               style: TextStyle(fontSize: 12, color: _isThinkingMode ? Colors.amberAccent : Colors.cyanAccent),
             ),
           ],
         ),
         actions: [
-          // Toggle switch for Thinking Mode
-          Row(
-            children: [
-              const Icon(Icons.psychology, size: 20),
-              Switch(
-                value: _isThinkingMode,
-                activeColor: Colors.amberAccent,
-                onChanged: (val) {
-                  setState(() {
-                    _isThinkingMode = val;
-                  });
-                },
+          // Temperature (Effort) Dropdown Menu
+          DropdownButton<double>(
+            value: _selectedTemperature,
+            dropdownColor: const Color(0xFF1E293B),
+            underline: const SizedBox(),
+            icon: const Icon(Icons.tune, color: Colors.cyanAccent, size: 20),
+            items: const [
+              DropdownMenuItem(
+                value: 0.1,
+                child: Text('0.1 (Max Effort)', style: TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: 0.5,
+                child: Text('0.5 (High Effort)', style: TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: 0.9,
+                child: Text('0.9 (Default)', style: TextStyle(color: Colors.white, fontSize: 13)),
               ),
             ],
-          )
+            onChanged: (double? newValue) {
+              if (newValue != null) {
+                setState(() {
+                  _selectedTemperature = newValue;
+                });
+              }
+            },
+          ),
+          const SizedBox(width: 4),
+          // Thinking Mode Switch
+          Switch(
+            value: _isThinkingMode,
+            activeColor: Colors.amberAccent,
+            onChanged: (val) {
+              setState(() {
+                _isThinkingMode = val;
+              });
+            },
+          ),
         ],
       ),
-      // History Drawer Tab
       drawer: Drawer(
         backgroundColor: const Color(0xFF1E293B),
         child: ListView(
