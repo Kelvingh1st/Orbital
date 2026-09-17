@@ -4,39 +4,25 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:fllama/fllama.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const OrbitalApp());
 }
 
-class MemoryDatabase {
-  static Database? _db;
-
-  static Future<Database> get instance async {
-    if (_db != null) return _db!;
-    _db = await openDatabase(
-      p.join(await getDatabasesPath(), 'orbital_memory.db'),
-      onCreate: (db, version) {
-        return db.execute(
-          'CREATE TABLE memories(id INTEGER PRIMARY KEY AUTOINCREMENT, fact TEXT)',
-        );
-      },
-      version: 1,
-    );
-    return _db!;
-  }
+class MemoryStorage {
+  static const String _key = "orbital_memories";
 
   static Future<void> saveMemory(String fact) async {
-    final db = await instance;
-    await db.insert('memories', {'fact': fact});
+    final prefs = await SharedPreferences.getInstance();
+    List<String> memories = prefs.getStringList(_key) ?? [];
+    memories.add(fact);
+    await prefs.setStringList(_key, memories);
   }
 
   static Future<List<String>> getAllMemories() async {
-    final db = await instance;
-    final List<Map<String, dynamic>> maps = await db.query('memories');
-    return List.generate(maps.length, (i) => maps[i]['fact'] as String);
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_key) ?? [];
   }
 }
 
@@ -199,12 +185,12 @@ class _OrbitalMainUiState extends State<OrbitalMainUi> {
     });
     _inputController.clear();
 
-    final memories = await MemoryDatabase.getAllMemories();
+    final memories = await MemoryStorage.getAllMemories();
     final memoryBlock = memories.isNotEmpty
-        ? "\nLearned Personal Facts:\n- ${memories.join('\n- ')}"
+        ? "\nLearned User Facts:\n- ${memories.join('\n- ')}"
         : "";
 
-    final baseContext = "You are Orbital, a personal AI assistant.$memoryBlock";
+    final baseContext = "You are Orbital, Kelvin's personal offline AI assistant.$memoryBlock";
 
     final systemPrompt = _thinking
         ? "$baseContext\nAnalyze variables, execute precise reasoning, and think through the problem step-by-step before outputting the result."
@@ -227,7 +213,7 @@ class _OrbitalMainUiState extends State<OrbitalMainUi> {
       if (text.toLowerCase().startsWith("remember that") || text.toLowerCase().startsWith("note:")) {
         final factToSave = text.replaceAll(RegExp(r'(?i)remember that|note:'), '').trim();
         if (factToSave.isNotEmpty) {
-          await MemoryDatabase.saveMemory(factToSave);
+          await MemoryStorage.saveMemory(factToSave);
         }
       }
 
