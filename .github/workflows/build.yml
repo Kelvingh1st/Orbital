@@ -28,7 +28,40 @@ jobs:
           cp lib/main.dart /tmp/main.dart
           flutter create --platforms=android .
           cp /tmp/main.dart lib/main.dart
-          
+
+          # Lock AGP to 7.4.2 to prevent fllama ProGuard conflicts
+          cat << 'INNER_EOF' > android/settings.gradle
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  def propertiesFile = new File(rootProject.projectDir, 'local.properties')
+                  if (propertiesFile.exists()) {
+                      propertiesFile.withReader('UTF-8') { reader -> properties.load(reader) }
+                  }
+                  def flutterSdkPath = properties.getProperty('flutter.sdk')
+                  assert flutterSdkPath != null : "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "7.4.2" apply false
+              id "org.jetbrains.kotlin.android" version "1.8.20" apply false
+          }
+
+          include ":app"
+          INNER_EOF
+
+          # Configure Android SDK 35 & minSDK 21
           cat << 'INNER_EOF' > android/app/build.gradle
           plugins {
               id "com.android.application"
@@ -49,7 +82,7 @@ jobs:
 
           android {
               namespace "com.example.orbital"
-              compileSdkVersion 34
+              compileSdkVersion 35
 
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_1_8
@@ -63,7 +96,7 @@ jobs:
               defaultConfig {
                   applicationId "com.example.orbital"
                   minSdkVersion 21
-                  targetSdkVersion 34
+                  targetSdkVersion 35
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
               }
@@ -71,6 +104,8 @@ jobs:
               buildTypes {
                   release {
                       signingConfig signingConfigs.debug
+                      minifyEnabled false
+                      shrinkResources false
                   }
               }
           }
@@ -89,5 +124,5 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: orbital-app
+          name: Orbital
           path: build/app/outputs/flutter-apk/app-release.apk
