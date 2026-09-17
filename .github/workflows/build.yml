@@ -25,7 +25,7 @@ jobs:
           channel: 'stable'
 
       - name: Re-generate Android Platform Files
-        run: flutter create . --platforms=android
+        run: flutter create . --platforms=android --overwrite
 
       - name: Install dependencies
         run: flutter pub get
@@ -37,4 +37,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Orbital-Standalone-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/*.apk
