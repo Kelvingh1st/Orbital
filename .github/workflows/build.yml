@@ -1,9 +1,8 @@
-name: Build Orbital Standalone APK
+name: Build Orbital APK
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   build:
@@ -11,33 +10,31 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v3
         with:
+          distribution: 'zulu'
           java-version: '17'
-          distribution: 'temurin'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.19.x'
           channel: 'stable'
 
-      - name: Accept Android SDK Licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Re-generate Android Platform Files
-        run: flutter create . --platforms=android --overwrite
-
-      - name: Install dependencies
+      - name: Get Dependencies
         run: flutter pub get
 
+      - name: Generate Launcher Icons
+        run: flutter pub run flutter_launcher_icons
+
       - name: Build APK
-        run: flutter build apk --release --verbose
+        run: flutter build apk --release
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: Orbital-Standalone-APK
-          path: build/app/outputs/flutter-apk/*.apk
+          name: orbital-app
+          path: build/app/outputs/flutter-apk/app-release.apk
