@@ -1,9 +1,43 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:fllama/fllama.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   runApp(const OrbitalApp());
+}
+
+class MemoryDatabase {
+  static Database? _db;
+
+  static Future<Database> get instance async {
+    if (_db != null) return _db!;
+    _db = await openDatabase(
+      p.join(await getDatabasesPath(), 'orbital_memory.db'),
+      onCreate: (db, version) {
+        return db.execute(
+          'CREATE TABLE memories(id INTEGER PRIMARY KEY AUTOINCREMENT, fact TEXT)',
+        );
+      },
+      version: 1,
+    );
+    return _db!;
+  }
+
+  static Future<void> saveMemory(String fact) async {
+    final db = await instance;
+    await db.insert('memories', {'fact': fact});
+  }
+
+  static Future<List<String>> getAllMemories() async {
+    final db = await instance;
+    final List<Map<String, dynamic>> maps = await db.query('memories');
+    return List.generate(maps.length, (i) => maps[i]['fact'] as String);
+  }
 }
 
 class OrbitalApp extends StatelessWidget {
@@ -12,321 +46,402 @@ class OrbitalApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Orbital 3 Pro',
+      title: 'Orbital',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
+      theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF0A0F18),
-        primaryColor: const Color(0xFF00F0FF),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF131C2A),
-          elevation: 0,
-          iconTheme: IconThemeData(color: Color(0xFF00F0FF)),
-        ),
-        textSelectionTheme: const TextSelectionThemeData(
-          cursorColor: Color(0xFF00F0FF),
-          selectionColor: Color(0x5500F0FF),
-        ),
+        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF131C2A)),
       ),
-      home: const ChatScreen(),
+      home: const MainSetupScreen(),
     );
   }
 }
 
-class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+class MainSetupScreen extends StatefulWidget {
+  const MainSetupScreen({super.key});
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<MainSetupScreen> createState() => _MainSetupScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> _messages = [];
-  
-  final List<Map<String, dynamic>> _historySessions = [
-    {"title": "Hardware Setup (LM317)", "pinned": true},
-    {"title": "Math & Logic Gates", "pinned": false},
-    {"title": "GGUF Engine Config", "pinned": false},
-  ];
+class _MainSetupScreenState extends State<MainSetupScreen> {
+  bool _isModelReady = false;
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  String _statusMessage = "Checking local storage for Orbital...";
+  String _modelPath = "";
 
-  bool _isLoading = false;
-  bool _isThinkingMode = false;
-  double _selectedTemperature = 0.9;
+  final String _modelUrl =
+      "https://github.com/Kelvingh1st/Orbital/raw/main/assets/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
 
-  void _sendMessage({String? overrideText}) {
-    final textToSend = overrideText ?? _controller.text.trim();
-    if (textToSend.isEmpty) return;
-    
-    setState(() {
-      _messages.add({"sender": "user", "text": textToSend});
-      _isLoading = true;
-    });
-    _controller.clear();
+  @override
+  void initState() {
+    super.initState();
+    _checkAndInitModel();
+  }
 
-    Future.delayed(const Duration(seconds: 1), () {
+  Future<void> _checkAndInitModel() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/orbital_engine.gguf');
+    _modelPath = file.path;
+
+    if (await file.exists()) {
       setState(() {
-        String responseText = _isThinkingMode 
-            ? "[Thinking Process]\n- Analyzing variables\n- Executing precise reasoning\n\n[Output]\nTask executed with Neon-Teal parameters."
-            : "Orbital 3 Pro active. How can I assist you further?";
-            
-        _messages.add({"sender": "orbital", "text": responseText});
-        _isLoading = false;
+        _isModelReady = true;
       });
-    });
-  }
-
-  void _editUserMessage(String text) {
-    _controller.text = text;
-  }
-
-  void _copyToClipboard(String text) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Response copied to clipboard', style: TextStyle(color: Colors.black)),
-        backgroundColor: Color(0xFF00F0FF),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _shareMessage(String text) async {
-    final result = await Share.shareWithResult(text, subject: 'From Orbital 3 Pro');
-    if (result.status == ShareResultStatus.success) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Response shared successfully!', style: TextStyle(color: Colors.black)),
-            backgroundColor: Color(0xFF00F0FF),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+    } else {
+      _startDownload(file);
     }
   }
 
-  void _togglePin(int index) {
+  Future<void> _startDownload(File file) async {
     setState(() {
-      _historySessions[index]["pinned"] = !_historySessions[index]["pinned"];
-      _historySessions.sort((a, b) {
-        if (a["pinned"] == b["pinned"]) return 0;
-        return a["pinned"] ? -1 : 1;
-      });
+      _isDownloading = true;
+      _statusMessage = "Downloading Orbital Engine (1.12 GB)...";
     });
-    Navigator.pop(context);
-  }
 
-  void _deleteSession(int index) {
-    setState(() {
-      _historySessions.removeAt(index);
-    });
-    Navigator.pop(context);
+    try {
+      final request = http.Request('GET', Uri.parse(_modelUrl));
+      final response = await http.Client().send(request);
+
+      final totalBytes = response.contentLength ?? 1200000000;
+      int receivedBytes = 0;
+
+      final sink = file.openWrite();
+      await response.stream.forEach((chunk) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        setState(() {
+          _downloadProgress = receivedBytes / totalBytes;
+        });
+      });
+
+      await sink.close();
+      setState(() {
+        _isDownloading = false;
+        _isModelReady = true;
+      });
+    } catch (e) {
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = "Download failed: $e";
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    const neonTeal = Color(0xFF00F0FF);
+    if (!_isModelReady) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(color: Color(0xFF00F0FF)),
+                const SizedBox(height: 24),
+                Text(_statusMessage, style: const TextStyle(color: Colors.white)),
+                const SizedBox(height: 16),
+                if (_isDownloading) ...[
+                  LinearProgressIndicator(
+                    value: _downloadProgress,
+                    backgroundColor: const Color(0xFF131C2A),
+                    color: const Color(0xFF00F0FF),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "${(_downloadProgress * 100).toStringAsFixed(1)}%",
+                    style: const TextStyle(color: Color(0xFF00F0FF)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return OrbitalMainUi(modelPath: _modelPath);
+  }
+}
+
+class OrbitalMainUi extends StatefulWidget {
+  final String modelPath;
+  const OrbitalMainUi({super.key, required this.modelPath});
+
+  @override
+  State<OrbitalMainUi> createState() => _OrbitalMainUiState();
+}
+
+class _OrbitalMainUiState extends State<OrbitalMainUi> {
+  final TextEditingController _inputController = TextEditingController();
+  final List<Map<String, String>> _messages = [];
+  bool _thinking = false;
+  bool _isGenerating = false;
+  String _effortLabel = "Default";
+  double _tempValue = 0.9;
+
+  void _setEffort(String label, double temp) {
+    setState(() {
+      _effortLabel = label;
+      _tempValue = temp;
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _inputController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() {
+      _messages.add({"role": "user", "content": text});
+      _isGenerating = true;
+    });
+    _inputController.clear();
+
+    final memories = await MemoryDatabase.getAllMemories();
+    final memoryBlock = memories.isNotEmpty
+        ? "\nLearned Personal Facts:\n- ${memories.join('\n- ')}"
+        : "";
+
+    final baseContext = "You are Orbital, a personal AI assistant.$memoryBlock";
+
+    final systemPrompt = _thinking
+        ? "$baseContext\nAnalyze variables, execute precise reasoning, and think through the problem step-by-step before outputting the result."
+        : baseContext;
+
+    final req = OpenAiRequest(
+      modelPath: widget.modelPath,
+      temperature: _tempValue,
+      messages: [
+        Message(Role.system, systemPrompt),
+        Message(Role.user, text),
+      ],
+      contextSize: 2048,
+    );
+
+    try {
+      final response = await fllama(req);
+      final reply = response.choices?.first.message.content ?? "No response";
+
+      if (text.toLowerCase().startsWith("remember that") || text.toLowerCase().startsWith("note:")) {
+        final factToSave = text.replaceAll(RegExp(r'(?i)remember that|note:'), '').trim();
+        if (factToSave.isNotEmpty) {
+          await MemoryDatabase.saveMemory(factToSave);
+        }
+      }
+
+      setState(() {
+        _messages.add({"role": "assistant", "content": reply});
+      });
+    } catch (e) {
+      setState(() {
+        _messages.add({"role": "assistant", "content": "Engine error: $e"});
+      });
+    } finally {
+      setState(() {
+        _isGenerating = false;
+      });
+    }
+  }
+
+  void _newChat() {
+    setState(() {
+      _messages.clear();
+    });
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final subColor = _thinking ? const Color(0xFFFFD84D) : const Color(0xFF00F0FF);
+    final subText =
+        "Offline Engine (1.5B) • Effort: $_effortLabel${_thinking ? ' • THINKING' : ''}";
 
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Orbital 3 Pro', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-            Text(
-              'Offline Engine (1.5B) • Temp: $_selectedTemperature', 
-              style: TextStyle(fontSize: 12, color: _isThinkingMode ? Colors.amberAccent : neonTeal),
-            ),
-          ],
-        ),
-        actions: [
-          DropdownButton<double>(
-            value: _selectedTemperature,
-            dropdownColor: const Color(0xFF131C2A),
-            underline: const SizedBox(),
-            icon: const Icon(Icons.tune, color: neonTeal, size: 20),
-            items: const [
-              DropdownMenuItem(value: 0.1, child: Text('0.1 (Max Effort)', style: TextStyle(color: Colors.white, fontSize: 13))),
-              DropdownMenuItem(value: 0.5, child: Text('0.5 (High Effort)', style: TextStyle(color: Colors.white, fontSize: 13))),
-              DropdownMenuItem(value: 0.9, child: Text('0.9 (Default)', style: TextStyle(color: Colors.white, fontSize: 13))),
-            ],
-            onChanged: (val) { if (val != null) setState(() => _selectedTemperature = val); },
-          ),
-          const SizedBox(width: 4),
-          Switch(
-            value: _isThinkingMode,
-            activeColor: Colors.amberAccent,
-            inactiveThumbColor: neonTeal.withOpacity(0.5),
-            inactiveTrackColor: Colors.black26,
-            onChanged: (val) => setState(() => _isThinkingMode = val),
-          ),
-        ],
-      ),
       drawer: Drawer(
         backgroundColor: const Color(0xFF131C2A),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.only(top: 50, bottom: 20, left: 16),
+              padding: const EdgeInsets.fromLTRB(16, 50, 16, 20),
               color: const Color(0xFF0A0F18),
+              width: double.infinity,
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Orbital 3 Pro', style: TextStyle(color: neonTeal, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text('Orbital', style: TextStyle(color: Color(0xFF00F0FF), fontSize: 22, fontWeight: FontWeight.bold)),
                   SizedBox(height: 4),
-                  Text('Local History', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  Text('Local History & Memory', style: TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.add_circle_outline, color: neonTeal),
-              title: const Text('New Chat', style: TextStyle(color: neonTeal, fontWeight: FontWeight.bold)),
-              onTap: () {
-                setState(() => _messages.clear());
-                Navigator.pop(context);
-              },
+              leading: const Icon(Icons.add, color: Color(0xFF00F0FF)),
+              title: const Text('New Chat', style: TextStyle(color: Color(0xFF00F0FF), fontWeight: FontWeight.bold)),
+              onTap: _newChat,
             ),
-            const Divider(color: Colors.white12),
-            Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: _historySessions.length,
-                itemBuilder: (context, index) {
-                  final session = _historySessions[index];
-                  return ListTile(
-                    leading: Icon(
-                      session["pinned"] ? Icons.push_pin : Icons.chat_bubble_outline,
-                      color: session["pinned"] ? neonTeal : Colors.grey,
-                      size: 20,
-                    ),
-                    title: Text(
-                      session["title"],
-                      style: TextStyle(color: session["pinned"] ? Colors.white : Colors.white70, fontSize: 14),
-                    ),
-                    trailing: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.grey, size: 20),
-                      color: const Color(0xFF1A2639),
-                      onSelected: (value) {
-                        if (value == 'pin') _togglePin(index);
-                        if (value == 'delete') _deleteSession(index);
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'pin',
-                          child: Text(session["pinned"] ? 'Unpin' : 'Pin', style: const TextStyle(color: Colors.white)),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete', style: TextStyle(color: Colors.redAccent)),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+            const Divider(color: Colors.white10),
+            const ListTile(
+              leading: Text('📌', style: TextStyle(fontSize: 16)),
+              title: Text('Hardware Setup (LM317)', style: TextStyle(color: Colors.white, fontSize: 14)),
+              trailing: Icon(Icons.more_vert, color: Colors.grey),
+            ),
+            const ListTile(
+              leading: Text('◯', style: TextStyle(fontSize: 16, color: Colors.grey)),
+              title: Text('Math & Logic Gates', style: TextStyle(color: Colors.white, fontSize: 14)),
+              trailing: Icon(Icons.more_vert, color: Colors.grey),
             ),
           ],
         ),
       ),
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Orbital', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text(subText, style: TextStyle(fontSize: 11, color: subColor)),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<double>(
+            icon: const Icon(Icons.settings, color: Color(0xFF00F0FF)),
+            color: const Color(0xFF1A2639),
+            onSelected: (val) {
+              if (val == 0.1) _setEffort("Max Effort", 0.1);
+              if (val == 0.5) _setEffort("High Effort", 0.5);
+              if (val == 0.9) _setEffort("Default", 0.9);
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 0.1, child: Text('Max Effort (0.1)')),
+              const PopupMenuItem(value: 0.5, child: Text('High Effort (0.5)')),
+              const PopupMenuItem(value: 0.9, child: Text('Default (0.9)')),
+            ],
+          ),
+          Switch(
+            value: _thinking,
+            activeColor: const Color(0xFFFFD84D),
+            activeTrackColor: const Color(0xFF6E5B14),
+            inactiveThumbColor: const Color(0xFF00F0FF),
+            inactiveTrackColor: const Color(0xFF252B35),
+            onChanged: (v) => setState(() => _thinking = v),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                final isUser = msg["sender"] == "user";
-                
-                return Column(
-                  crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: isUser ? const Color(0xFF131C2A) : Colors.transparent,
-                        border: isUser ? Border.all(color: neonTeal.withOpacity(0.3)) : null,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        msg["text"] ?? "",
-                        style: TextStyle(color: isUser ? neonTeal : Colors.white, fontSize: 15, height: 1.4),
-                      ),
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('◎', style: TextStyle(fontSize: 44, color: Color(0xFF00F0FF))),
+                        SizedBox(height: 8),
+                        Text('Orbital', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                        Text('Local AI • Memory Active', style: TextStyle(color: Color(0xFF687384))),
+                      ],
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: isUser
-                            ? [
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 16, color: Colors.grey),
-                                  onPressed: () => _editUserMessage(msg["text"]!),
-                                  tooltip: "Edit Prompt",
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[index];
+                      final isUser = msg['role'] == 'user';
+                      final text = msg['content'] ?? '';
+
+                      return Align(
+                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.88),
+                          child: Column(
+                            crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isUser ? const Color(0xFF131C2A) : Colors.transparent,
+                                  border: isUser ? Border.all(color: const Color(0xFF00F0FF).withOpacity(0.33)) : null,
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
-                              ]
-                            : [
-                                IconButton(
-                                  icon: const Icon(Icons.content_copy, size: 16, color: Colors.grey),
-                                  onPressed: () => _copyToClipboard(msg["text"]!),
-                                  tooltip: "Copy",
+                                child: Text(
+                                  text,
+                                  style: TextStyle(
+                                    color: isUser ? const Color(0xFF00F0FF) : Colors.white,
+                                    fontSize: 15,
+                                    height: 1.45,
+                                  ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.share, size: 16, color: Colors.grey),
-                                  onPressed: () => _shareMessage(msg["text"]!),
-                                  tooltip: "Share",
-                                ),
-                              ],
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isUser)
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, size: 16, color: Color(0xFF707887)),
+                                      onPressed: () {
+                                        _inputController.text = text;
+                                      },
+                                    )
+                                  else ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.copy, size: 16, color: Color(0xFF707887)),
+                                      onPressed: () {
+                                        Clipboard.setData(ClipboardData(text: text));
+                                      },
+                                    ),
+                                  ]
+                                ],
+                              )
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
-          if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: LinearProgressIndicator(
-                backgroundColor: const Color(0xFF131C2A),
-                color: _isThinkingMode ? Colors.amberAccent : neonTeal,
-              ),
+          if (_isGenerating)
+            const LinearProgressIndicator(
+              backgroundColor: Color(0xFF131C2A),
+              color: Color(0xFF00F0FF),
             ),
           Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF131C2A),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: neonTeal.withOpacity(0.5)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'Ask Orbital 3 Pro...',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                      hintStyle: TextStyle(color: Colors.grey),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            color: const Color(0xFF0A0F18),
+            child: Container(
+              padding: const EdgeInsets.only(left: 15, right: 6, top: 4, bottom: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131C2A),
+                borderRadius: BorderRadius.circular(25),
+                border: Border.all(color: const Color(0xFF00F0FF).withOpacity(0.5)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputController,
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                      decoration: const InputDecoration(
+                        hintText: 'Ask Orbital...',
+                        hintStyle: TextStyle(color: Colors.grey),
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (_) => _sendMessage(),
                     ),
-                    style: const TextStyle(color: Colors.white),
                   ),
-                ),
-                Container(
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: neonTeal,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_upward, color: Colors.black),
-                    onPressed: _sendMessage,
-                  ),
-                ),
-              ],
+                  InkWell(
+                    onTap: _sendMessage,
+                    child: const CircleAvatar(
+                      radius: 21,
+                      backgroundColor: Color(0xFF00F0FF),
+                      child: Icon(Icons.arrow_upward, color: Colors.black, size: 22),
+                    ),
+                  )
+                ],
+              ),
             ),
           ),
         ],

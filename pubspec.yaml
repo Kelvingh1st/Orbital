@@ -1,5 +1,5 @@
 name: orbital
-description: Orbital Standalone AI Assistant
+description: Orbital Standalone AI Assistant with Long-Term Memory
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -12,6 +12,8 @@ dependencies:
   http: ^1.2.0
   path_provider: ^2.1.2
   fllama: ^0.1.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
 
 dev_dependencies:
   flutter_test:
