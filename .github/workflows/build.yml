@@ -18,10 +18,26 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK & CMake
+        run: |
+          sdkmanager --install "ndk;25.1.8937393" "cmake;3.22.1"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
+      - name: Generate Android Platform Safely
+        run: |
+          # 1. Back up your custom UI and logic
+          cp lib/main.dart /tmp/main.dart
+          # 2. Let Flutter generate the perfect Android folder and gradle wrapper
+          flutter create --platforms=android .
+          # 3. Restore your custom code
+          cp /tmp/main.dart lib/main.dart
 
       - name: Get Dependencies
         run: flutter pub get
