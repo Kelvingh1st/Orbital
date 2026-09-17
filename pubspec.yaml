@@ -1,5 +1,5 @@
-name: orbital_app
-description: "Orbital 3 Pro Standalone App"
+name: orbital
+description: Orbital Standalone AI Assistant
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,14 +9,22 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  share_plus: ^10.0.0
+  http: ^1.2.0
+  path_provider: ^2.1.2
+  fllama: ^0.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/Orbital_icon.png"
 
 flutter:
   uses-material-design: true
   assets:
-    - assets/
+    - assets/icon/Orbital_icon.png
