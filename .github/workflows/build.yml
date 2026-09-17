@@ -24,6 +24,9 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Accept Android SDK Licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
       - name: Re-generate Android Platform Files
         run: flutter create . --platforms=android --overwrite
 
@@ -31,7 +34,7 @@ jobs:
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
